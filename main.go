@@ -5,6 +5,7 @@ import (
 
 	"github.com/songgao/packets/ethernet"
 	"github.com/songgao/water"
+	"golang.org/x/net/ipv4"
 )
 
 // TUN拿到IP帧
@@ -35,6 +36,11 @@ func main() {
 		log.Printf("ethertype: % x\n", frame.Ethertype())
 		if frame.Ethertype() == ethernet.IPv4 {
 			log.Printf("IPV4")
+			v4, err := ipv4.ParseHeader(frame.Payload())
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("protocol:% x\n", v4.Protocol)
 		}
 		if frame.Ethertype() == ethernet.ARP {
 			log.Printf("ARP")
