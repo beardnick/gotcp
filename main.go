@@ -2,59 +2,58 @@ package main
 
 import (
 	"log"
+	"runtime"
+	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/songgao/water"
+	"github.com/google/gopacket/pcap"
 )
 
-// TUN拿到IP帧
-// TAP拿到以太网帧
+var (
+	device      string = "eth0"
+	snapshotLen int32  = 1024
+	promiscuous bool   = false
+	err         error
+	timeout     time.Duration = 1 * time.Second
+	handle      *pcap.Handle
+)
 
 func main() {
-	iface, err := water.New(water.Config{
-		DeviceType: water.TAP,
-		PlatformSpecificParams: water.PlatformSpecificParams{
-			Name: "mytun",
-		},
-	})
-	if err != nil {
-		log.Fatal("create tun failed:", err)
+	switch runtime.GOOS {
+	case "darwin":
+		device = "en0"
+	case "linux":
+		device = "eth0"
 	}
-	log.Println("successfully create ", iface.Name())
-	etherP := layers.Ethernet{}
-	ipv4P := layers.IPv4{}
-	ipv6P := layers.IPv6{}
-	tcpP := layers.TCP{}
-	udpP := layers.UDP{}
-	icmpv4P := layers.ICMPv4{}
-	icmpv6P := layers.ICMPv6{}
-	arpP := layers.ARP{}
-	frame := make([]byte, 1500)
-	decoded := []gopacket.LayerType{}
-	for {
-		_, err := iface.Read(frame)
-		if err != nil {
-			log.Fatal("read:", err)
-		}
-		parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &etherP, &ipv4P, &ipv6P, &tcpP, &udpP, &icmpv4P, &icmpv6P, &arpP)
-		parser.IgnoreUnsupported = true
-		err = parser.DecodeLayers(frame, &decoded)
-		if err != nil {
-			log.Fatal("parse:", err)
-		}
-		for _, v := range decoded {
-			switch v {
-			case layers.LayerTypeTCP:
-				log.Printf("tcp %v -> %v\n", tcpP.SrcPort, tcpP.DstPort)
-			case layers.LayerTypeEthernet:
-				log.Println("ether type:", etherP.EthernetType)
-			case layers.LayerTypeIPv4:
-				log.Printf("ipv4 %v -> %v\n", ipv4P.SrcIP, ipv4P.DstIP)
-			case layers.LayerTypeUDP:
-				log.Printf("udp %v -> %v", udpP.SrcPort, udpP.DstPort)
-			}
-		}
+	// Open device
+	handle, err = pcap.OpenLive(device, snapshotLen, promiscuous, timeout)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer handle.Close()
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	for packet := range packetSource.Packets() {
+		Parse(packet)
+	}
+}
+
+func Parse(packet gopacket.Packet) {
+	ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
+	if ethernetLayer != nil {
+		ethernetPacket, _ := ethernetLayer.(*layers.Ethernet)
+		log.Printf("ethertype:%v\n", ethernetPacket.EthernetType)
 	}
 
+	ipLayer := packet.Layer(layers.LayerTypeIPv4)
+	if ipLayer != nil {
+		ip, _ := ipLayer.(*layers.IPv4)
+		log.Printf("%s: %s -> %s\n", ip.Protocol, ip.SrcIP, ip.DstIP)
+	}
+
+	tcpLayer := packet.Layer(layers.LayerTypeTCP)
+	if tcpLayer != nil {
+		tcp, _ := tcpLayer.(*layers.TCP)
+		log.Printf("tcp:%s -> %s\n", tcp.SrcPort, tcp.DstPort)
+	}
 }
