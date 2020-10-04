@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"runtime"
 	"time"
@@ -31,6 +32,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Set filter
+	var filter string = "tcp and port 80"
+	err = handle.SetBPFFilter(filter)
+	if err != nil {
+		log.Fatal("filter:", err)
+	}
 	defer handle.Close()
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	for packet := range packetSource.Packets() {
@@ -42,18 +49,18 @@ func Parse(packet gopacket.Packet) {
 	ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
 	if ethernetLayer != nil {
 		ethernetPacket, _ := ethernetLayer.(*layers.Ethernet)
-		log.Printf("ethertype:%v\n", ethernetPacket.EthernetType)
+		fmt.Printf("ethertype:%v\n", ethernetPacket.EthernetType)
 	}
 
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	if ipLayer != nil {
 		ip, _ := ipLayer.(*layers.IPv4)
-		log.Printf("%s: %s -> %s\n", ip.Protocol, ip.SrcIP, ip.DstIP)
+		fmt.Printf("%s: %s -> %s\n", ip.Protocol, ip.SrcIP, ip.DstIP)
 	}
 
 	tcpLayer := packet.Layer(layers.LayerTypeTCP)
 	if tcpLayer != nil {
 		tcp, _ := tcpLayer.(*layers.TCP)
-		log.Printf("tcp:%s -> %s\n", tcp.SrcPort, tcp.DstPort)
+		fmt.Printf("tcp:%s -> %s\n", tcp.SrcPort, tcp.DstPort)
 	}
 }
