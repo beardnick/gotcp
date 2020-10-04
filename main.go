@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 
-	"github.com/songgao/packets/ethernet"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/songgao/water"
-	"golang.org/x/net/ipv4"
 )
 
 // TUN拿到IP帧
@@ -22,28 +22,38 @@ func main() {
 		log.Fatal("create tun failed:", err)
 	}
 	log.Println("successfully create ", iface.Name())
-	var frame ethernet.Frame
+	etherP := layers.Ethernet{}
+	ipv4P := layers.IPv4{}
+	ipv6P := layers.IPv6{}
+	tcpP := layers.TCP{}
+	udpP := layers.UDP{}
+	icmpv4P := layers.ICMPv4{}
+	icmpv6P := layers.ICMPv6{}
+	arpP := layers.ARP{}
+	frame := make([]byte, 1500)
+	decoded := []gopacket.LayerType{}
 	for {
-		frame.Resize(15000)
-		n, err := iface.Read([]byte(frame))
+		_, err := iface.Read(frame)
 		if err != nil {
 			log.Fatal("read:", err)
 		}
-		frame = frame[:n]
-		log.Printf("% x\n", frame)
-		log.Printf("dst mac addr:%s\n", frame.Destination())
-		log.Printf("src mac addr:%s\n", frame.Source())
-		log.Printf("ethertype: % x\n", frame.Ethertype())
-		if frame.Ethertype() == ethernet.IPv4 {
-			log.Printf("IPV4")
-			v4, err := ipv4.ParseHeader(frame.Payload())
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("protocol:% x\n", v4.Protocol)
+		parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &etherP, &ipv4P, &ipv6P, &tcpP, &udpP, &icmpv4P, &icmpv6P, &arpP)
+		parser.IgnoreUnsupported = true
+		err = parser.DecodeLayers(frame, &decoded)
+		if err != nil {
+			log.Fatal("parse:", err)
 		}
-		if frame.Ethertype() == ethernet.ARP {
-			log.Printf("ARP")
+		for _, v := range decoded {
+			switch v {
+			case layers.LayerTypeTCP:
+				log.Printf("tcp %v -> %v\n", tcpP.SrcPort, tcpP.DstPort)
+			case layers.LayerTypeEthernet:
+				log.Println("ether type:", etherP.EthernetType)
+			case layers.LayerTypeIPv4:
+				log.Printf("ipv4 %v -> %v\n", ipv4P.SrcIP, ipv4P.DstIP)
+			case layers.LayerTypeUDP:
+				log.Printf("udp %v -> %v", udpP.SrcPort, udpP.DstPort)
+			}
 		}
 	}
 
