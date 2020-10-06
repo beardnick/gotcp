@@ -97,27 +97,27 @@ func Act(packet gopacket.Packet, handle *pcap.Handle) error {
 	}
 	tcpP, _ := tcpLayer.(*layers.TCP)
 	if tcpP.SYN {
-		etherLay := layers.Ethernet{
-			SrcMAC: ethernetPacket.DstMAC,
-			DstMAC: ethernetPacket.SrcMAC,
-		}
-		ipLay := layers.IPv4{
-			SrcIP: ip.DstIP,
-			DstIP: ip.SrcIP,
-		}
-		tcpLay := layers.TCP{
-			SrcPort: tcpP.DstPort,
-			DstPort: tcpP.DstPort,
-			SYN:     true,
-			ACK:     true,
-		}
+		etherLay := ethernetPacket
+		etherLay.SrcMAC = ethernetPacket.DstMAC
+		etherLay.DstMAC = ethernetPacket.SrcMAC
+
+		ipLay := ip
+		ipLay.SrcIP = ip.DstIP
+		ipLay.DstIP = ip.SrcIP
+
+		tcpLay := tcpP
+		tcpLay.SYN = true
+		tcpLay.ACK = true
+		tcpLay.Ack = tcpP.Seq + 1
+		tcpLay.Seq = 0
+
 		buffer := gopacket.NewSerializeBuffer()
 		gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{},
-			&etherLay,
-			&ipLay,
-			&tcpLay,
+			etherLay,
+			ipLay,
+			tcpLay,
 		)
-		fmt.Println("write:", buffer.Bytes())
+		fmt.Printf("write:% x\n", buffer.Bytes())
 		return handle.WritePacketData(buffer.Bytes())
 	}
 	return nil
