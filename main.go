@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"gotcp/tcp"
 	"log"
+	"os"
 	"runtime"
 	"time"
 
@@ -35,6 +36,9 @@ func main() {
 	case "linux":
 		device = "eth0"
 	}
+	if len(os.Args) == 2 {
+		device = os.Args[1]
+	}
 	// Open device
 	handle, err = pcap.OpenLive(device, snapshotLen, promiscuous, timeout)
 	if err != nil {
@@ -42,7 +46,7 @@ func main() {
 	}
 	// Set filter
 	//var filter string = "tcp and port 9000 and dst host 192.168.0.107"
-	var filter string = "tcp and port 9000"
+	var filter string = "tcp and dst port 9000"
 	err = handle.SetBPFFilter(filter)
 	if err != nil {
 		log.Fatal("filter:", err)
@@ -55,6 +59,7 @@ func main() {
 		if err != nil {
 			log.Println("act:", err)
 		}
+		break
 	}
 }
 
@@ -97,26 +102,31 @@ func Act(packet gopacket.Packet, handle *pcap.Handle) error {
 	}
 	tcpP, _ := tcpLayer.(*layers.TCP)
 	if tcpP.SYN {
-		etherLay := ethernetPacket
-		etherLay.SrcMAC = ethernetPacket.DstMAC
-		etherLay.DstMAC = ethernetPacket.SrcMAC
+		etherLay := layers.Ethernet{
+			SrcMAC: ethernetPacket.DstMAC,
+			DstMAC: ethernetPacket.SrcMAC,
+		}
+		ipLay := layers.IPv4{
+			SrcIP: ip.DstIP,
+			DstIP: ip.SrcIP,
+		}
 
-		ipLay := ip
-		ipLay.SrcIP = ip.DstIP
-		ipLay.DstIP = ip.SrcIP
-
-		tcpLay := tcpP
-		tcpLay.SYN = true
-		tcpLay.ACK = true
-		tcpLay.Ack = tcpP.Seq + 1
-		tcpLay.Seq = 0
+		tcpLay := layers.TCP{
+			SrcPort: tcpP.DstPort,
+			DstPort: tcpP.SrcPort,
+			SYN:     true,
+			ACK:     true,
+			Ack:     tcpP.Seq + 1,
+			Seq:     123,
+		}
 
 		buffer := gopacket.NewSerializeBuffer()
 		gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{},
-			etherLay,
-			ipLay,
-			tcpLay,
+			&etherLay,
+			&ipLay,
+			&tcpLay,
 		)
+		fmt.Println("tcplay:", tcpLay)
 		fmt.Printf("write:% x\n", buffer.Bytes())
 		return handle.WritePacketData(buffer.Bytes())
 	}
