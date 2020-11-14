@@ -10,9 +10,10 @@ import (
 )
 
 // [create tun tap](https://www.kernel.org/doc/html/latest/networking/tuntap.html?highlight=tuntap)
-func NewTun(name string) (fd int, err error) {
+func NewTunTap(name string, flags int) (fd int, err error) {
 	// syscall.IFF_NO_PI only raw package
-	flags := syscall.IFF_TUN | syscall.IFF_NO_PI
+	//flags := syscall.IFF_TUN | syscall.IFF_NO_PI
+	//flags := syscall.IFF_TAP | syscall.IFF_NO_PI
 	fd, err = syscall.Open("/dev/net/tun", syscall.O_RDWR, 0)
 	if err != nil {
 		return
@@ -30,10 +31,17 @@ func NewTun(name string) (fd int, err error) {
 		return -1, errno
 	}
 	return
+
+}
+
+func NewTun(name string) (fd int, err error) {
+	flags := syscall.IFF_TUN | syscall.IFF_NO_PI
+	return NewTunTap(name, flags)
 }
 
 func NewTap(name string) (fd int, err error) {
-	panic("not implemented")
+	flags := syscall.IFF_TAP | syscall.IFF_NO_PI
+	return NewTunTap(name, flags)
 }
 
 // # startup tun/tap device
@@ -51,6 +59,15 @@ func SetUpLink(name string) error {
 // ip addr add 192.168.0.1/24 dev $name
 func SetIp(name, ip string) error {
 	out, err := exec.Command("ip", "addr", "add", ip, "dev", name).CombinedOutput()
+	if err != nil {
+		err = fmt.Errorf("%v:%v", err, string(out))
+		return err
+	}
+	return nil
+}
+
+func SetRoute(name, addr string) error {
+	out, err := exec.Command("ip", "route", "add", addr, "dev", name).CombinedOutput()
 	if err != nil {
 		err = fmt.Errorf("%v:%v", err, string(out))
 		return err
