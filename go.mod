@@ -2,5 +2,4 @@ module gotcp
 
 go 1.13
 
-require (
-)
+require github.com/stretchr/testify v1.6.1

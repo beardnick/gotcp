@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"gotcp/tuntap"
 	"log"
 )
@@ -22,5 +21,5 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("tun:", tun)
+	log.Println("tun:", tun)
 }

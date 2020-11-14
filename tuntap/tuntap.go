@@ -32,7 +32,7 @@ func NewTun(name string) (fd int, err error) {
 	return
 }
 
-func NewTap() (fd int, err error) {
+func NewTap(name string) (fd int, err error) {
 	panic("not implemented")
 }
 
@@ -56,4 +56,15 @@ func SetIp(name, ip string) error {
 		return err
 	}
 	return nil
+}
+
+// # show tun/tap device info
+// ip addr show $name
+func IpShow(name string) (string, error) {
+	out, err := exec.Command("ip", "addr", "show", name).CombinedOutput()
+	if err != nil {
+		err = fmt.Errorf("%v:%v", err, string(out))
+		return "", err
+	}
+	return string(out), nil
 }

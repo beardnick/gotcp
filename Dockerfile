@@ -5,5 +5,4 @@ RUN apt-get update
 RUN apt-get -y install libpcap-dev netcat vim
 RUN mkdir /root/go-tcp
 COPY ./ /root/go-tcp
-RUN go env -w  GOPROXY=https://goproxy.cn,direct 
-RUN cd /root/go-tcp/ && go build -v .
+RUN cd /root/go-tcp/ && go mod tidy -v
