@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -25,10 +26,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	//err = tuntap.SetRoute(dev,"192.168.1.0/24")
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
 	log.Println("net:", net)
 	buf := make([]byte, 1024)
 	for {
@@ -36,15 +33,79 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		//log.Printf("pack->\n%x",buf[:n])
 		pack := gopacket.NewPacket(
 			buf[:n],
-			//layers.LayerTypeEthernet,
 			layers.LayerTypeIPv4,
 			gopacket.Default,
 		)
-		printPacketInfo(pack)
+		//printPacketInfo(pack)
+		conn, err := handle(net, pack)
+		if err != nil {
+			fmt.Println("err:", err)
+		}
+		if conn != 0 {
+			fmt.Println("connected:", conn)
+		}
 	}
+}
+
+func UnWrapTcp(packet gopacket.Packet) (ip *layers.IPv4, tcp *layers.TCP, err error) {
+	ipLayer := packet.Layer(layers.LayerTypeIPv4)
+	if ipLayer == nil {
+		err = errors.New("not valid ipv4 packet")
+		return
+	}
+	ip, _ = ipLayer.(*layers.IPv4)
+	tcpLayer := packet.Layer(layers.LayerTypeTCP)
+	if tcpLayer == nil {
+		err = errors.New("not valid tcp packet")
+		return
+	}
+	tcp, _ = tcpLayer.(*layers.TCP)
+	return
+}
+
+func handle(fd int, packet gopacket.Packet) (conn int, err error) {
+	ip, tcp, err := UnWrapTcp(packet)
+	if err != nil {
+		return
+	}
+	if tcp.SYN {
+		ipLay := *ip
+		ipLay.SrcIP = ip.DstIP
+		ipLay.DstIP = ip.SrcIP
+		//ipLay := layers.IPv4{
+		//	SrcIP: ip.DstIP,
+		//	DstIP: ip.SrcIP,
+		//}
+		tcpLay := *tcp
+		tcpLay.SrcPort = tcp.DstPort
+		tcpLay.DstPort = tcp.SrcPort
+		tcpLay.SYN = true
+		tcpLay.ACK = true
+		tcpLay.Ack = tcp.Seq + 1
+		tcpLay.Seq = 123
+		//tcpLay := layers.TCP{
+		//	SrcPort: tcp.DstPort,
+		//	DstPort: tcp.SrcPort,
+		//	SYN:     true,
+		//	ACK:     true,
+		//	Ack:     tcp.Seq + 1,
+		//	Seq:     123,
+		//}
+		buffer := gopacket.NewSerializeBuffer()
+		gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{},
+			&ipLay,
+			&tcpLay,
+		)
+		fmt.Println("write:", buffer.Bytes())
+		// invalid argument if buffer is not valid ip packet
+		_, err = tuntap.Write(fd, buffer.Bytes())
+		if err != nil {
+			return
+		}
+	}
+	return
 }
 
 func printPacketInfo(packet gopacket.Packet) {
