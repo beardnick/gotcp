@@ -65,45 +65,65 @@ func UnWrapTcp(packet gopacket.Packet) (ip *layers.IPv4, tcp *layers.TCP, err er
 	return
 }
 
+var seq = 0
+
 func handle(fd int, packet gopacket.Packet) (conn int, err error) {
 	ip, tcp, err := UnWrapTcp(packet)
 	if err != nil {
 		return
 	}
+	var (
+		ipLay  layers.IPv4
+		tcpLay layers.TCP
+	)
 	if tcp.SYN {
-		ipLay := *ip
+		ipLay = *ip
 		ipLay.SrcIP = ip.DstIP
 		ipLay.DstIP = ip.SrcIP
 		//ipLay := layers.IPv4{
 		//	SrcIP: ip.DstIP,
 		//	DstIP: ip.SrcIP,
 		//}
-		tcpLay := *tcp
+		//tcpLay = *tcp
 		tcpLay.SrcPort = tcp.DstPort
 		tcpLay.DstPort = tcp.SrcPort
 		tcpLay.SYN = true
 		tcpLay.ACK = true
 		tcpLay.Ack = tcp.Seq + 1
-		tcpLay.Seq = 123
-		//tcpLay := layers.TCP{
+		tcpLay.Seq = uint32(seq)
+		tcpLay.Window = 100
+		//tcpLay = layers.TCP{
 		//	SrcPort: tcp.DstPort,
 		//	DstPort: tcp.SrcPort,
 		//	SYN:     true,
 		//	ACK:     true,
 		//	Ack:     tcp.Seq + 1,
-		//	Seq:     123,
+		//	Seq:     uint32(seq),
+		//	Window: 1000,
 		//}
-		buffer := gopacket.NewSerializeBuffer()
-		gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{},
-			&ipLay,
-			&tcpLay,
-		)
-		fmt.Println("write:", buffer.Bytes())
-		// invalid argument if buffer is not valid ip packet
-		_, err = tuntap.Write(fd, buffer.Bytes())
-		if err != nil {
-			return
-		}
+	}
+	if tcp.Ack == uint32(seq+1) {
+		fmt.Println("handshake succeed")
+		return
+	}
+	//  checksum is needed
+	tcpLay.SetNetworkLayerForChecksum(&ipLay)
+	buffer := gopacket.NewSerializeBuffer()
+	err = gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{
+		FixLengths:       true,
+		ComputeChecksums: true,
+	},
+		&ipLay,
+		&tcpLay,
+	)
+	if err != nil {
+		return
+	}
+	fmt.Println("write:", buffer.Bytes())
+	// invalid argument if buffer is not valid ip packet
+	_, err = tuntap.Write(fd, buffer.Bytes())
+	if err != nil {
+		return
 	}
 	return
 }
