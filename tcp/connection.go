@@ -10,27 +10,47 @@ import (
 	"math/rand"
 )
 
+type TcpState int
+
 const (
-	CLOSED = iota
+	CLOSED TcpState = iota
 	LISTEN
-	SYNRCVD
+	SYN_RCVD
+	SYN_SENT
 	ESTAB
+	FIN_WAIT_1
+	CLOSE_WAIT
+	CLOSING
+	FINWAIT_2
+	TIME_WAIT
+	LAST_ACK
 )
 
-type TcpState int32
-
-func (t TcpState) String() string {
-	switch t {
-	case LISTEN:
-		return "LISTEN"
-	case SYNRCVD:
-		return "SYNRCVD"
-	case ESTAB:
-		return "ESTAB"
+func (s TcpState) String() string {
+	switch s {
 	case CLOSED:
 		return "CLOSED"
+	case LISTEN:
+		return "LISTEN"
+	case SYN_RCVD:
+		return "SYN_RCVD"
+	case SYN_SENT:
+		return "SYN_SENT"
+	case ESTAB:
+		return "ESTAB"
+	case FIN_WAIT_1:
+		return "FIN_WAIT_1"
+	case CLOSE_WAIT:
+		return "CLOSE_WAIT"
+	case CLOSING:
+		return "CLOSING"
+	case FINWAIT_2:
+	case TIME_WAIT:
+		return "TIME_WAIT"
+	case LAST_ACK:
+		return "LAST_ACK"
 	}
-	return "CLOSED"
+	return "UNKNOWN"
 }
 
 type Connection struct {
@@ -83,7 +103,7 @@ func Accept(fd int) (conn int, err error) {
 			}
 			continue
 		}
-		if tcp.ACK && connection.State == SYNRCVD && connection.Nxt == tcp.Ack {
+		if tcp.ACK && connection.State == SYN_RCVD && connection.Nxt == tcp.Ack {
 			connection.State = ESTAB
 			connections = append(connections, connection)
 			conn = len(connections) - 1
@@ -138,7 +158,7 @@ func SendSyn(fd int, ip layers.IPv4, tcp layers.TCP) (conn Connection, err error
 	if err != nil {
 		return
 	}
-	conn.State = SYNRCVD
+	conn.State = SYN_RCVD
 	return
 }
 
