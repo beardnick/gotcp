@@ -1,7 +1,6 @@
 package tcp
 
 import (
-	"errors"
 	"fmt"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -81,14 +80,10 @@ func New(ip *layers.IPv4, tcp *layers.TCP, nic, wind int) Connection {
 }
 
 func (c Connection) IsTarget(ip *layers.IPv4, tcp *layers.TCP) bool {
-	target := ip.DstIP.String() == c.DstIp &&
+	return ip.DstIP.String() == c.DstIp &&
 		ip.SrcIP.String() == c.SrcIp &&
 		tcp.SrcPort.String() == c.SrcPort &&
 		tcp.DstPort.String() == c.DstPort
-	if !target {
-		fmt.Println("not target")
-	}
-	return target
 }
 
 func (c Connection) String() string {
@@ -111,18 +106,17 @@ func Rcvd(conn int) (buf []byte, err error) {
 		}
 	}()
 	connection := connections[conn]
-	fmt.Println("rcvd:", connection)
 	ip, tcp, err := ReadPacket(connection.Nic)
-	if err != nil {
+	if _, ok := err.(NotValidTcpErr); !ok && err != nil {
 		return
 	}
 	for !connection.IsTarget(ip, tcp) {
 		ip, tcp, err = ReadPacket(connection.Nic)
-		if err != nil {
+		if _, ok := err.(NotValidTcpErr); !ok && err != nil {
 			return
 		}
-		buf = ip.Payload
 	}
+	buf = tcp.Payload
 	return
 }
 
@@ -216,9 +210,7 @@ func SendSyn(fd int, ip *layers.IPv4, tcp *layers.TCP) (conn Connection, err err
 
 func ReadPacket(fd int) (ip *layers.IPv4, tcp *layers.TCP, err error) {
 	buf := make([]byte, 1024)
-	fmt.Println("before read")
 	n, err := tuntap.Read(fd, buf)
-	fmt.Println("after read")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -233,13 +225,13 @@ func ReadPacket(fd int) (ip *layers.IPv4, tcp *layers.TCP, err error) {
 func UnWrapTcp(packet gopacket.Packet) (ip *layers.IPv4, tcp *layers.TCP, err error) {
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
 	if ipLayer == nil {
-		err = errors.New("not valid ipv4 packet")
+		err = ConnectionClosedErr{}
 		return
 	}
 	ip, _ = ipLayer.(*layers.IPv4)
 	tcpLayer := packet.Layer(layers.LayerTypeTCP)
 	if tcpLayer == nil {
-		err = errors.New("not valid tcp packet")
+		err = NotValidTcpErr{}
 		return
 	}
 	tcp, _ = tcpLayer.(*layers.TCP)
@@ -251,4 +243,11 @@ type ConnectionClosedErr struct {
 
 func (c ConnectionClosedErr) Error() string {
 	return "connection closed"
+}
+
+type NotValidTcpErr struct {
+}
+
+func (e NotValidTcpErr) Error() string {
+	return "not valid tcp packet"
 }
