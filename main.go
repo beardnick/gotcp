@@ -7,7 +7,6 @@ import (
 	"gotcp/tcp"
 	"gotcp/tuntap"
 	"log"
-	"time"
 )
 
 func main() {
@@ -30,7 +29,23 @@ func main() {
 	if err != nil {
 		return
 	}
-	<-time.After(time.Second * 10)
 	fmt.Println("conn:", conn)
-	tuntap.Close(net)
+	for {
+		buf, err := tcp.Rcvd(conn)
+		if _, ok := err.(tcp.ConnectionClosedErr); ok {
+			break
+		}
+		if err != nil {
+			fmt.Println("read err:", err)
+			continue
+		}
+		_, err = tcp.Send(conn, buf)
+		if err != nil {
+			fmt.Println("send err:", err)
+		}
+		if string(buf) == "byte" {
+			break
+		}
+	}
+	fmt.Println("connection closed")
 }
