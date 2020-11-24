@@ -6,7 +6,6 @@ import (
 	"github.com/google/gopacket/layers"
 	"gotcp/tuntap"
 	"log"
-	"math/rand"
 )
 
 type TcpState int
@@ -117,7 +116,26 @@ func Rcvd(conn int) (buf []byte, err error) {
 		}
 	}
 	buf = tcp.Payload
+	err = DataAck(ip, tcp, connection)
 	return
+}
+
+func DataAck(ip *layers.IPv4, tcp *layers.TCP, conn Connection) (err error) {
+
+	ipLay := *ip
+	ipLay.SrcIP = ip.DstIP
+	ipLay.DstIP = ip.SrcIP
+
+	tcpLay := *tcp
+	tcpLay.SrcPort = tcp.DstPort
+	tcpLay.DstPort = tcp.SrcPort
+	tcpLay.PSH = false
+	tcpLay.ACK = true
+	tcpLay.Ack = tcp.Seq + uint32(len(tcp.Payload))
+	// todo: what seq stands for
+	tcpLay.Seq = 1
+	tcpLay.Window = uint16(conn.Window())
+	return WritePacket(conn.Nic, &ipLay, &tcpLay)
 }
 
 var (
@@ -176,13 +194,22 @@ func SendSyn(fd int, ip *layers.IPv4, tcp *layers.TCP) (conn Connection, err err
 	tcpLay.SYN = true
 	tcpLay.ACK = true
 	tcpLay.Ack = tcp.Seq + 1
-	tcpLay.Seq = uint32(rand.Int())
+	tcpLay.Seq = 0
 	tcpLay.Window = uint16(conn.Window())
 
 	conn.Nxt = tcpLay.Seq + 1
 
-	//  checksum is needed
-	err = tcpLay.SetNetworkLayerForChecksum(&ipLay)
+	err = WritePacket(fd, &ipLay, &tcpLay)
+	if err != nil {
+		return
+	}
+	conn.State = SYN_RCVD
+	return
+}
+
+func WritePacket(fd int, ip *layers.IPv4, tcp *layers.TCP) (err error) {
+	// checksum needed
+	err = tcp.SetNetworkLayerForChecksum(ip)
 	if err != nil {
 		return
 	}
@@ -191,8 +218,8 @@ func SendSyn(fd int, ip *layers.IPv4, tcp *layers.TCP) (conn Connection, err err
 		FixLengths:       true,
 		ComputeChecksums: true,
 	},
-		&ipLay,
-		&tcpLay,
+		ip,
+		tcp,
 	)
 	if err != nil {
 		return
@@ -200,11 +227,6 @@ func SendSyn(fd int, ip *layers.IPv4, tcp *layers.TCP) (conn Connection, err err
 	fmt.Println("write:", buffer.Bytes())
 	// invalid argument if buffer is not valid ip packet
 	_, err = tuntap.Write(fd, buffer.Bytes())
-
-	if err != nil {
-		return
-	}
-	conn.State = SYN_RCVD
 	return
 }
 
