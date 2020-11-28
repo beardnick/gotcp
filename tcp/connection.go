@@ -6,6 +6,7 @@ import (
 	"github.com/google/gopacket/layers"
 	"gotcp/tuntap"
 	"log"
+	"math/rand"
 )
 
 type TcpState int
@@ -58,6 +59,7 @@ type Connection struct {
 	SrcPort string
 	DstPort string
 	Nxt     uint32
+	Seq     uint32
 	window  []byte
 }
 
@@ -132,9 +134,14 @@ func DataAck(ip *layers.IPv4, tcp *layers.TCP, conn Connection) (err error) {
 	tcpLay.PSH = false
 	tcpLay.ACK = true
 	tcpLay.Ack = tcp.Seq + uint32(len(tcp.Payload))
-	// todo: what seq stands for
-	tcpLay.Seq = 1
 	tcpLay.Window = uint16(conn.Window())
+	tcpLay.Payload = []byte{}
+	// PSH + ACK
+	if tcp.ACK {
+		// note: tcp.Ack is what client expect seq next
+		conn.Seq = tcp.Ack
+	}
+	tcpLay.Seq = conn.Seq
 	return WritePacket(conn.Nic, &ipLay, &tcpLay)
 }
 
@@ -171,6 +178,7 @@ func Accept(fd int) (conn int, err error) {
 		}
 		if tcp.ACK && connection.State == SYN_RCVD && connection.Nxt == tcp.Ack {
 			connection.State = ESTAB
+			connection.Seq = 0
 			connections = append(connections, connection)
 			conn = len(connections) - 1
 			fmt.Println("handshake succeed")
@@ -194,7 +202,7 @@ func SendSyn(fd int, ip *layers.IPv4, tcp *layers.TCP) (conn Connection, err err
 	tcpLay.SYN = true
 	tcpLay.ACK = true
 	tcpLay.Ack = tcp.Seq + 1
-	tcpLay.Seq = 0
+	tcpLay.Seq = uint32(rand.Int())
 	tcpLay.Window = uint16(conn.Window())
 
 	conn.Nxt = tcpLay.Seq + 1
@@ -224,7 +232,7 @@ func WritePacket(fd int, ip *layers.IPv4, tcp *layers.TCP) (err error) {
 	if err != nil {
 		return
 	}
-	fmt.Println("write:", buffer.Bytes())
+	//fmt.Println("write:", buffer.Bytes())
 	// invalid argument if buffer is not valid ip packet
 	_, err = tuntap.Write(fd, buffer.Bytes())
 	return

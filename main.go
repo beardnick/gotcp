@@ -39,7 +39,7 @@ func main() {
 			fmt.Println("read err:", err)
 			continue
 		}
-		fmt.Print("read:", string(buf))
+		fmt.Println("read:", string(buf))
 		_, err = tcp.Send(conn, buf)
 		if err != nil {
 			fmt.Println("send err:", err)
