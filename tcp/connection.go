@@ -111,7 +111,7 @@ func Send(conn int, buf []byte) (n int, err error) {
 		SrcIP:    connection.SrcIp,
 		DstIP:    connection.DstIp,
 	}
-	fmt.Println("send conn.seq:", connection.Seq)
+	//fmt.Println("send conn.seq:", connection.Seq)
 	tcpLay := layers.TCP{
 		BaseLayer: layers.BaseLayer{
 			Payload: buf,
@@ -146,15 +146,67 @@ func Rcvd(conn int) (buf []byte, err error) {
 			return
 		}
 	}
-	if !tcp.PSH {
+	if tcp.PSH {
+		buf = tcp.Payload
+		err = TcpPSHACK(ip, tcp, connection)
 		return
 	}
-	buf = tcp.Payload
-	err = DataAck(ip, tcp, connection)
+	if tcp.FIN {
+		err = TcpFIN(ip, tcp, connection)
+		if err != nil {
+			return
+		}
+	}
 	return
 }
 
-func DataAck(ip *layers.IPv4, tcp *layers.TCP, conn *Connection) (err error) {
+func TcpFIN(ip *layers.IPv4, tcp *layers.TCP, connection *Connection) (err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			err = ConnectionClosedErr{}
+		}
+	}()
+	ipLay := layers.IPv4{
+		Version:  4,
+		TTL:      64,
+		Protocol: layers.IPProtocolTCP,
+		SrcIP:    connection.SrcIp,
+		DstIP:    connection.DstIp,
+	}
+	//fmt.Println("send conn.seq:", connection.Seq)
+	tcpLay := layers.TCP{
+		SrcPort: connection.SrcPort,
+		DstPort: connection.DstPort,
+		Seq:     tcp.Ack,
+		// note: PSH and ACK must send together
+		ACK:    true,
+		Ack:    tcp.Seq + 1,
+		Window: connection.Window(),
+	}
+	err = WritePacket(connection.Nic, &ipLay, &tcpLay)
+	if err != nil {
+		return
+	}
+	tcpLay.FIN = true
+	err = WritePacket(connection.Nic, &ipLay, &tcpLay)
+	ipData, tcpData, err := ReadPacket(connection.Nic)
+	if err != nil {
+		return
+	}
+	for !connection.IsTarget(ipData, tcpData) {
+		ipData, tcpData, err = ReadPacket(connection.Nic)
+		if err != nil {
+			return
+		}
+	}
+	if tcpData.ACK && tcpData.Ack == tcpLay.Seq+1 {
+		fmt.Println("disconnect succeed")
+		connections = append(connections[:connection.Nic], connections[connection.Nic+1:]...)
+	}
+	return
+}
+
+func TcpPSHACK(ip *layers.IPv4, tcp *layers.TCP, conn *Connection) (err error) {
 
 	ipLay := *ip
 	ipLay.SrcIP = ip.DstIP
@@ -289,7 +341,7 @@ func WritePacket(fd int, ip *layers.IPv4, tcp *layers.TCP) (err error) {
 	if err != nil {
 		return
 	}
-	fmt.Println("write:", buffer.Bytes())
+	//fmt.Println("write:", buffer.Bytes())
 	// invalid argument if buffer is not valid ip packet
 	_, err = tuntap.Write(fd, buffer.Bytes())
 	return
